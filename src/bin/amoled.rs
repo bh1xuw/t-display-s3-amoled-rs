@@ -78,20 +78,9 @@ fn main() -> ! {
     // Set GPIO4 as an output, and set its state high initially.
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
     let mut led = io.pins.gpio38.into_push_pull_output();
-    let user_btn = io.pins.gpio21.into_pull_down_input();
-    let boot0_btn = io.pins.gpio0.into_pull_up_input(); // default pull up
+    //let user_btn = io.pins.gpio21.into_pull_down_input();
+    //let boot0_btn = io.pins.gpio0.into_pull_up_input(); // default pull up
     println!("GPIO init OK");
-
-    // Create ADC instances
-    let analog = peripherals.SENS.split();
-    // let vbat_pin = io.pins.gpio4; // ADC1_CH3
-
-    let mut adc1_config = AdcConfig::new();
-    let mut vbat_pin =
-        adc1_config.enable_pin(io.pins.gpio4.into_analog(), Attenuation::Attenuation11dB);
-    let mut adc1 = ADC::<ADC1>::adc(analog.adc1, adc1_config).unwrap();
-
-    println!("ADC init OK");
 
     let sclk = io.pins.gpio47;
     let rst = io.pins.gpio17;
@@ -120,13 +109,6 @@ fn main() -> ! {
         &clocks,
     );
 
-    /* .with_dma(dma_channel.configure(
-        false,
-        &mut descriptors,
-        &mut rx_descriptors,
-        DmaPriority::Priority0,
-    ));*/
-
     let mut cs = cs.into_push_pull_output();
     cs.set_high().unwrap();
 
@@ -134,7 +116,9 @@ fn main() -> ! {
     display.reset(&mut rst, &mut delay).unwrap();
     println!("reset display");
     display.init(&mut delay).unwrap();
-    display.set_orientation(t_display_s3_amoled::rm67162::Orientation::LandscapeFlipped);
+    display
+        .set_orientation(t_display_s3_amoled::rm67162::Orientation::LandscapeFlipped)
+        .unwrap();
 
     println!("init display");
 
@@ -183,32 +167,6 @@ fn main() -> ! {
         .draw(&mut display)
         .unwrap();
         cnt += 1;
-    }
-
-    loop {
-        let _ = led.toggle();
-
-        let pin3_value: u16 = nb::block!(adc1.read(&mut vbat_pin)).unwrap();
-        let pin3_voltage: f32 = pin3_value as f32 * 3.3 / 4095.0;
-        println!("vbat ADC reading = {}", pin3_voltage);
-
-        let mut s = String::new();
-        core::write!(&mut s, "vbat ADC reading = {}\n", pin3_voltage).unwrap();
-
-        Text::with_alignment(
-            &s,
-            Point::new(100, 20 + 40 * 2),
-            MonoTextStyleBuilder::new()
-                .background_color(Rgb565::BLACK)
-                .text_color(Rgb565::YELLOW)
-                .font(&FONT_10X20)
-                .build(),
-            Alignment::Center,
-        )
-        .draw(&mut display)
-        .unwrap();
-
-        delay.delay_ms(1000_u32);
     }
 }
 

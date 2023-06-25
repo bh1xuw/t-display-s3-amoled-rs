@@ -172,6 +172,26 @@ where
         Ok(())
     }
 
+    // fill a rectangle with raw color buffer, the buffer must be in 16bit rgb565 format
+    pub unsafe fn fill_raw_colors(
+        &mut self,
+        x: u16,
+        y: u16,
+        w: u16,
+        h: u16,
+        raw_colors: &[u8],
+    ) -> Result<(), ()> {
+        self.set_address(x, y, x + w - 1, y + h - 1)?;
+
+        self.cs.set_low().unwrap();
+        let txbuf = StaticReadBuffer::new(raw_colors.as_ptr(), raw_colors.len());
+
+        self.dma_send_colors(txbuf, true)?;
+
+        self.cs.set_high().unwrap();
+        Ok(())
+    }
+
     pub fn fill_colors(
         &mut self,
         x: u16,
