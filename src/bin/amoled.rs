@@ -135,7 +135,6 @@ where
     }
 
     fn draw_raw_point(&mut self, x: u16, y: u16, color: [u8; 2]) -> Result<(), ()> {
-        println!("draw raw point: {} {} {:x?}", x, y, color);
         self.set_address(x, y, x, y)?;
         self.cs.set_low().unwrap();
         self.spi
@@ -147,6 +146,41 @@ where
                 &color[..],
             )
             .unwrap();
+        self.cs.set_high().unwrap();
+        Ok(())
+    }
+
+    fn fill_colors(
+        &mut self,
+        x: u16,
+        y: u16,
+        w: u16,
+        h: u16,
+        mut colors: impl Iterator<Item = [u8; 2]>,
+    ) -> Result<(), ()> {
+        self.set_address(x, y, x + w - 1, y + h - 1)?;
+        self.cs.set_low().unwrap();
+        self.spi
+            .write(
+                SpiDataMode::Quad,
+                Command::Command8(0x32, SpiDataMode::Single),
+                Address::Address24(0x2C << 8, SpiDataMode::Single),
+                0,
+                &colors.next().unwrap()[..],
+            )
+            .unwrap();
+
+        for _ in 1..((w as u32) * (h as u32)) {
+            self.spi
+                .write(
+                    SpiDataMode::Quad,
+                    Command::None,
+                    Address::None,
+                    0,
+                    &colors.next().unwrap()[..],
+                )
+                .unwrap();
+        }
         self.cs.set_high().unwrap();
         Ok(())
     }
@@ -222,6 +256,20 @@ where
         )?;
         Ok(())
     }
+
+    fn fill_contiguous<I>(&mut self, area: &Rectangle, colors: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Self::Color>,
+    {
+        self.fill_colors(
+            area.top_left.x as u16,
+            area.top_left.y as u16,
+            area.size.width as u16,
+            area.size.height as u16,
+            colors.into_iter().map(|c| c.to_be_bytes()),
+        )?;
+        Ok(())
+    }
 }
 
 #[hal::entry]
@@ -292,7 +340,7 @@ fn main() -> ! {
         Some(d1),
         Some(d2),
         Some(d3),
-        NO_PIN,       // Some(cs),
+        NO_PIN,       // Some(cs), NOTE: manually control cs
         80_u32.MHz(), // max 75MHz
         hal::spi::SpiMode::Mode0,
         &mut system.peripheral_clock_control,
@@ -327,6 +375,26 @@ fn main() -> ! {
     )
     .draw(&mut display)
     .unwrap();
+
+    let mut cnt = 0;
+    loop {
+        // fps testing
+        let mut s = String::new();
+        core::write!(&mut s, "Frames: {}\n", cnt).unwrap();
+        Text::with_alignment(
+            &s,
+            Point::new(100, 20 + 40 * 6),
+            MonoTextStyleBuilder::new()
+                .background_color(Rgb565::BLACK)
+                .text_color(Rgb565::CSS_BISQUE)
+                .font(&FONT_10X20)
+                .build(),
+            Alignment::Center,
+        )
+        .draw(&mut display)
+        .unwrap();
+        cnt += 1;
+    }
 
     loop {
         let _ = led.toggle();
