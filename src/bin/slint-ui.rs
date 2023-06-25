@@ -205,6 +205,12 @@ fn main() -> ! {
     loop {
         slint::platform::update_timers_and_animations();
 
+            ui.set_counter(i);
+            i += 1;
+            if i > 100 {
+                i = 0;
+            }
+
         // Draw the scene if something needs to be drawn.
         window.draw_if_needed(|renderer| {
             renderer.render_by_line(&mut wrapper);
@@ -212,11 +218,6 @@ fn main() -> ! {
 
         if !window.has_active_animations() {
             // if no animation is running, wait for the next input event
-            ui.set_counter(i);
-            i += 1;
-            if i > 100 {
-                i = 0;
-            }
         }
 
         led.toggle();
