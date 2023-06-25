@@ -1,5 +1,7 @@
 //! On-board RM67162 AMOLED screen driver
 
+use core::{iter, ops};
+
 use embedded_graphics::{
     pixelcolor::{raw::ToBytes, Rgb565},
     prelude::{DrawTarget, OriginDimensions, Size},
@@ -8,43 +10,36 @@ use embedded_graphics::{
 };
 use embedded_hal_1::{delay::DelayUs, digital::OutputPin};
 use hal::{
+    dma::{Rx, Tx},
     peripherals::SPI2,
-    spi::{Address, Command, HalfDuplexMode, HalfDuplexReadWrite, SpiDataMode},
+    prelude::_esp_hal_dma_DmaTransfer,
+    spi::{dma::SpiDma, Address, Command, HalfDuplexMode, HalfDuplexReadWrite, SpiDataMode},
     Spi,
 };
+use hal::{gdma::SuitablePeripheral0, prelude::_embedded_dma_ReadBuffer};
 
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub enum Orientation {
-    Portrait,
-    Landscape,
-    PortraitFlipped,
-    LandscapeFlipped,
-}
+use crate::rm67162::Orientation;
 
-impl Orientation {
-    pub(crate) fn to_madctr(&self) -> u8 {
-        match self {
-            Orientation::Portrait => 0x00,
-            Orientation::PortraitFlipped => 0b11000000,
-            Orientation::Landscape => 0b01100000,
-            Orientation::LandscapeFlipped => 0b10100000,
-        }
-    }
-}
+static mut DMA_BUFFER: [u8; 4096] = [0u8; 4096];
 
-pub struct RM67162<'a, CS> {
-    spi: Spi<'a, SPI2, HalfDuplexMode>,
+pub struct RM67162Dma<'a, TX: Tx, RX: Rx, CS> {
+    spi: Option<SpiDma<'a, SPI2, TX, RX, SuitablePeripheral0, HalfDuplexMode>>,
     cs: CS,
     orientation: Orientation,
 }
 
-impl<CS> RM67162<'_, CS>
+impl<TX, RX, CS> RM67162Dma<'_, TX, RX, CS>
 where
     CS: OutputPin,
+    TX: Tx,
+    RX: Rx,
 {
-    pub fn new<'a>(spi: Spi<'a, SPI2, HalfDuplexMode>, cs: CS) -> RM67162<'a, CS> {
-        RM67162 {
-            spi,
+    pub fn new<'a>(
+        spi: SpiDma<'a, SPI2, TX, RX, SuitablePeripheral0, HalfDuplexMode>,
+        cs: CS,
+    ) -> RM67162Dma<'a, TX, RX, CS> {
+        RM67162Dma {
+            spi: Some(spi),
             cs,
             orientation: Orientation::Portrait,
         }
@@ -66,16 +61,26 @@ where
     }
 
     fn send_cmd(&mut self, cmd: u32, data: &[u8]) -> Result<(), ()> {
+        unsafe {
+            DMA_BUFFER[..data.len()].copy_from_slice(data);
+        }
+        let txbuf = StaticReadBuffer::new(unsafe { &DMA_BUFFER[..] }, data.len());
+
         self.cs.set_low().unwrap();
-        self.spi
+
+        let mut spi = self.spi.take().unwrap();
+        let tx = spi
             .write(
                 SpiDataMode::Single,
                 Command::Command8(0x02, SpiDataMode::Single),
                 Address::Address24(cmd << 8, SpiDataMode::Single),
                 0,
-                data,
+                txbuf,
             )
             .unwrap();
+        (_, spi) = tx.wait();
+        self.spi.replace(spi);
+
         self.cs.set_high().unwrap();
         Ok(())
     }
@@ -123,19 +128,52 @@ where
         Ok(())
     }
 
-    pub fn draw_point(&mut self, x: u16, y: u16, color: Rgb565) -> Result<(), ()> {
+    fn draw_point(&mut self, x: u16, y: u16, color: Rgb565) -> Result<(), ()> {
         self.set_address(x, y, x, y)?;
+
+        unsafe {
+            DMA_BUFFER[..2].copy_from_slice(&color.to_be_bytes()[..]);
+        }
+        let txbuf = StaticReadBuffer::new(unsafe { &DMA_BUFFER[..] }, 2);
+
         self.cs.set_low().unwrap();
-        self.spi
+
+        let mut spi = self.spi.take().unwrap();
+        let tx = spi
             .write(
                 SpiDataMode::Quad,
                 Command::Command8(0x32, SpiDataMode::Single),
                 Address::Address24(0x2C << 8, SpiDataMode::Single),
                 0,
-                &color.to_be_bytes()[..],
+                txbuf,
             )
             .unwrap();
+        (_, spi) = tx.wait();
+        self.spi.replace(spi);
+
         self.cs.set_high().unwrap();
+        Ok(())
+    }
+
+    #[inline]
+    fn dma_send_colors(&mut self, txbuf: StaticReadBuffer<'_>, first_send: bool) -> Result<(), ()> {
+        let mut spi = self.spi.take().unwrap();
+
+        let tx = if first_send {
+            spi.write(
+                SpiDataMode::Quad,
+                Command::Command8(0x32, SpiDataMode::Single),
+                Address::Address24(0x2C << 8, SpiDataMode::Single),
+                0,
+                txbuf,
+            )
+            .unwrap()
+        } else {
+            spi.write(SpiDataMode::Quad, Command::None, Address::None, 0, txbuf)
+                .unwrap()
+        };
+        (_, spi) = tx.wait();
+        self.spi.replace(spi);
         Ok(())
     }
 
@@ -145,66 +183,48 @@ where
         y: u16,
         w: u16,
         h: u16,
-        mut colors: impl Iterator<Item = Rgb565>,
+        colors: impl Iterator<Item = Rgb565>,
     ) -> Result<(), ()> {
         self.set_address(x, y, x + w - 1, y + h - 1)?;
-        self.cs.set_low().unwrap();
-        self.spi
-            .write(
-                SpiDataMode::Quad,
-                Command::Command8(0x32, SpiDataMode::Single),
-                Address::Address24(0x2C << 8, SpiDataMode::Single),
-                0,
-                &colors.next().unwrap().to_be_bytes()[..],
-            )
-            .unwrap();
 
-        for _ in 1..((w as u32) * (h as u32)) {
-            self.spi
-                .write(
-                    SpiDataMode::Quad,
-                    Command::None,
-                    Address::None,
-                    0,
-                    &colors.next().unwrap().to_be_bytes()[..],
-                )
-                .unwrap();
+        let mut first_send = true;
+        self.cs.set_low().unwrap();
+
+        let mut i = 0;
+
+        for color in colors.into_iter().take(w as usize * h as usize) {
+            if i == 2048 {
+                let txbuf = StaticReadBuffer::new(unsafe { &DMA_BUFFER[..] }, 4096);
+
+                self.dma_send_colors(txbuf, first_send)?;
+                first_send = false;
+
+                i = 0;
+            }
+            unsafe {
+                DMA_BUFFER[2 * i..2 * i + 2].copy_from_slice(&color.to_be_bytes()[..]);
+            }
+            i += 1;
         }
+        if i > 0 {
+            let txbuf = StaticReadBuffer::new(unsafe { &DMA_BUFFER[..] }, 2 * i);
+            self.dma_send_colors(txbuf, first_send)?;
+        }
+
         self.cs.set_high().unwrap();
         Ok(())
     }
 
     fn fill_color(&mut self, x: u16, y: u16, w: u16, h: u16, color: Rgb565) -> Result<(), ()> {
-        self.set_address(x, y, x + w - 1, y + h - 1)?;
-        self.cs.set_low().unwrap();
-        self.spi
-            .write(
-                SpiDataMode::Quad,
-                Command::Command8(0x32, SpiDataMode::Single),
-                Address::Address24(0x2C << 8, SpiDataMode::Single),
-                0,
-                &color.to_be_bytes()[..],
-            )
-            .unwrap();
-
-        for _ in 1..((w as u32) * (h as u32)) {
-            self.spi
-                .write(
-                    SpiDataMode::Quad,
-                    Command::None,
-                    Address::None,
-                    0,
-                    &color.to_be_bytes()[..],
-                )
-                .unwrap();
-        }
-        self.cs.set_high().unwrap();
+        self.fill_colors(x, y, w, h, iter::repeat(color))?;
         Ok(())
     }
 }
 
-impl<CS> OriginDimensions for RM67162<'_, CS>
+impl<TX, RX, CS> OriginDimensions for RM67162Dma<'_, TX, RX, CS>
 where
+    TX: Tx,
+    RX: Rx,
     CS: OutputPin,
 {
     fn size(&self) -> Size {
@@ -219,8 +239,10 @@ where
     }
 }
 
-impl<CS> DrawTarget for RM67162<'_, CS>
+impl<TX, RX, CS> DrawTarget for RM67162Dma<'_, TX, RX, CS>
 where
+    TX: Tx,
+    RX: Rx,
     CS: OutputPin,
 {
     type Color = Rgb565;
@@ -263,5 +285,25 @@ where
             colors.into_iter(),
         )?;
         Ok(())
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct StaticReadBuffer<'a> {
+    buffer: &'a [u8],
+    len: usize,
+}
+
+impl StaticReadBuffer<'_> {
+    pub fn new(buffer: &[u8], len: usize) -> StaticReadBuffer {
+        StaticReadBuffer { buffer, len }
+    }
+}
+
+unsafe impl hal::prelude::_embedded_dma_ReadBuffer for StaticReadBuffer<'_> {
+    type Word = u8;
+
+    unsafe fn read_buffer(&self) -> (*const Self::Word, usize) {
+        (self.buffer.as_ptr(), self.len)
     }
 }
