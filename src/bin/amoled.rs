@@ -19,6 +19,7 @@ use hal::gpio::NO_PIN;
 use hal::peripherals::SPI2;
 use hal::prelude::_fugit_RateExtU32;
 use hal::spi::{Address, Command, HalfDuplexReadWrite, SpiDataMode};
+use hal::systimer::SystemTimer;
 use hal::{
     adc::{AdcConfig, Attenuation, ADC, ADC1},
     clock::ClockControl,
@@ -100,8 +101,6 @@ where
             self.send_cmd(0x3A, &[0x55])?; // 16bit mode
 
             self.send_cmd(0x51, &[0x00])?; // write brightness
-
-            //self.send_cmd(0x23, &[])?; // debug: all pixel on
 
             self.send_cmd(0x29, &[])?; // display on
             delay.delay_ms(120);
@@ -186,7 +185,6 @@ where
     }
 
     fn fill_color(&mut self, x: u16, y: u16, w: u16, h: u16, color: [u8; 2]) -> Result<(), ()> {
-        println!("fill color: {} {} {} {} {:x?}", x, y, w, h, color);
         self.set_address(x, y, x + w - 1, y + h - 1)?;
         self.cs.set_low().unwrap();
         self.spi
@@ -377,13 +375,27 @@ fn main() -> ! {
     .unwrap();
 
     let mut cnt = 0;
+    let started = now_ms();
+
     loop {
         // fps testing
         let mut s = String::new();
-        core::write!(&mut s, "Frames: {}\n", cnt).unwrap();
+
+        let elapsed = now_ms() - started;
+        core::write!(
+            &mut s,
+            "Frames: {}\nFPS: {:.1}",
+            cnt,
+            if elapsed > 0 {
+                cnt as f32 / (elapsed as f32 / 1000.0)
+            } else {
+                0.0
+            }
+        )
+        .unwrap();
         Text::with_alignment(
             &s,
-            Point::new(100, 20 + 40 * 6),
+            Point::new(100, 20 + 40 * 8),
             MonoTextStyleBuilder::new()
                 .background_color(Rgb565::BLACK)
                 .text_color(Rgb565::CSS_BISQUE)
@@ -421,4 +433,8 @@ fn main() -> ! {
 
         delay.delay_ms(1000_u32);
     }
+}
+
+fn now_ms() -> u64 {
+    SystemTimer::now() * 1_000 / SystemTimer::TICKS_PER_SECOND
 }

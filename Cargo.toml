@@ -4,6 +4,13 @@ version = "0.1.0"
 authors = ["BH1XUW <bh1xuw@gmail.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/bh1xuw/t-display-s3-amoled"
+documentation = "https://docs.rs/t-display-s3-amoled"
+homepage = "https://github.com/bh1xuw/t-display-s3-amoled"
+categories = ["hardware-support", "no-std", "embedded"]
+description = "BSP for T-Display S3 AMOLED, ESP32-S3 board with RM67162 AMOLED display"
+keywords = ["rm67162", "amoled"]
+readme = "README.md"
 
 [dependencies]
 hal = { package = "esp32s3-hal", version = "0.9.0", features = [
