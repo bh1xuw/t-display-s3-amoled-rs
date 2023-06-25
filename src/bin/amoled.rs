@@ -7,25 +7,19 @@ use alloc::string::String;
 use core::fmt::Write;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::{MonoTextStyle, MonoTextStyleBuilder};
-use embedded_graphics::pixelcolor::raw::ToBytes;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::Rectangle;
 use embedded_graphics::text::{Alignment, Text};
-use embedded_graphics::Pixel;
 use esp_backtrace as _;
 use esp_println::println;
 use hal::gpio::NO_PIN;
-use hal::peripherals::SPI2;
 use hal::prelude::_fugit_RateExtU32;
-use hal::spi::{Address, Command, HalfDuplexReadWrite, SpiDataMode};
 use hal::systimer::SystemTimer;
 use hal::{
     adc::{AdcConfig, Attenuation, ADC, ADC1},
     clock::ClockControl,
     peripherals::Peripherals,
     prelude::*,
-    spi::HalfDuplexMode,
     timer::TimerGroup,
     Delay, Rtc, Spi, IO,
 };
@@ -48,225 +42,6 @@ fn init_heap() {
             "Not enough available heap memory."
         );
         ALLOCATOR.init(heap_start as *mut u8, HEAP_SIZE);
-    }
-}
-
-pub struct RM67162<'a, T, CS> {
-    spi: Spi<'a, T, HalfDuplexMode>,
-    cs: CS,
-}
-
-impl<CS> RM67162<'_, SPI2, CS>
-where
-    CS: eh1::_embedded_hal_digital_blocking_OutputPin,
-{
-    pub fn new<'a>(spi: Spi<'a, SPI2, HalfDuplexMode>, cs: CS) -> RM67162<'a, SPI2, CS> {
-        RM67162 { spi, cs } // Cannot use Self here...... YOU Rust suck
-    }
-
-    pub fn reset(
-        &self,
-        rst: &mut impl embedded_hal_1::digital::OutputPin,
-        delay: &mut impl embedded_hal_1::delay::DelayUs,
-    ) -> Result<(), ()> {
-        rst.set_low().unwrap();
-        delay.delay_ms(300);
-
-        rst.set_high().unwrap();
-        delay.delay_ms(200);
-        Ok(())
-    }
-
-    fn send_cmd(&mut self, cmd: u32, data: &[u8]) -> Result<(), ()> {
-        self.cs.set_low().unwrap();
-        self.spi
-            .write(
-                SpiDataMode::Single,
-                Command::Command8(0x02, SpiDataMode::Single),
-                Address::Address24(cmd << 8, SpiDataMode::Single),
-                0,
-                data,
-            )
-            .unwrap();
-        self.cs.set_high().unwrap();
-        Ok(())
-    }
-
-    // rm67162_qspi_init
-    pub fn init(&mut self, delay: &mut impl embedded_hal_1::delay::DelayUs) -> Result<(), ()> {
-        for _ in 0..3 {
-            self.send_cmd(0x11, &[])?; // sleep out
-            delay.delay_ms(120);
-
-            self.send_cmd(0x3A, &[0x55])?; // 16bit mode
-
-            self.send_cmd(0x51, &[0x00])?; // write brightness
-
-            self.send_cmd(0x29, &[])?; // display on
-            delay.delay_ms(120);
-
-            self.send_cmd(0x51, &[0xD0])?; // write brightness
-        }
-        Ok(())
-    }
-
-    pub fn set_address(&mut self, x1: u16, y1: u16, x2: u16, y2: u16) -> Result<(), ()> {
-        self.send_cmd(
-            0x2a,
-            &[
-                (x1 >> 8) as u8,
-                (x1 & 0xFF) as u8,
-                (x2 >> 8) as u8,
-                (x2 & 0xFF) as u8,
-            ],
-        )?;
-        self.send_cmd(
-            0x2b,
-            &[
-                (y1 >> 8) as u8,
-                (y1 & 0xFF) as u8,
-                (y2 >> 8) as u8,
-                (y2 & 0xFF) as u8,
-            ],
-        )?;
-        self.send_cmd(0x2c, &[])?;
-        Ok(())
-    }
-
-    fn draw_raw_point(&mut self, x: u16, y: u16, color: [u8; 2]) -> Result<(), ()> {
-        self.set_address(x, y, x, y)?;
-        self.cs.set_low().unwrap();
-        self.spi
-            .write(
-                SpiDataMode::Quad,
-                Command::Command8(0x32, SpiDataMode::Single),
-                Address::Address24(0x2C << 8, SpiDataMode::Single),
-                0,
-                &color[..],
-            )
-            .unwrap();
-        self.cs.set_high().unwrap();
-        Ok(())
-    }
-
-    fn fill_colors(
-        &mut self,
-        x: u16,
-        y: u16,
-        w: u16,
-        h: u16,
-        mut colors: impl Iterator<Item = [u8; 2]>,
-    ) -> Result<(), ()> {
-        self.set_address(x, y, x + w - 1, y + h - 1)?;
-        self.cs.set_low().unwrap();
-        self.spi
-            .write(
-                SpiDataMode::Quad,
-                Command::Command8(0x32, SpiDataMode::Single),
-                Address::Address24(0x2C << 8, SpiDataMode::Single),
-                0,
-                &colors.next().unwrap()[..],
-            )
-            .unwrap();
-
-        for _ in 1..((w as u32) * (h as u32)) {
-            self.spi
-                .write(
-                    SpiDataMode::Quad,
-                    Command::None,
-                    Address::None,
-                    0,
-                    &colors.next().unwrap()[..],
-                )
-                .unwrap();
-        }
-        self.cs.set_high().unwrap();
-        Ok(())
-    }
-
-    fn fill_color(&mut self, x: u16, y: u16, w: u16, h: u16, color: [u8; 2]) -> Result<(), ()> {
-        self.set_address(x, y, x + w - 1, y + h - 1)?;
-        self.cs.set_low().unwrap();
-        self.spi
-            .write(
-                SpiDataMode::Quad,
-                Command::Command8(0x32, SpiDataMode::Single),
-                Address::Address24(0x2C << 8, SpiDataMode::Single),
-                0,
-                &color[..],
-            )
-            .unwrap();
-
-        for _ in 1..((w as u32) * (h as u32)) {
-            self.spi
-                .write(
-                    SpiDataMode::Quad,
-                    Command::None,
-                    Address::None,
-                    0,
-                    &color[..],
-                )
-                .unwrap();
-        }
-        self.cs.set_high().unwrap();
-        Ok(())
-    }
-}
-
-impl<CS> OriginDimensions for RM67162<'_, SPI2, CS>
-where
-    CS: eh1::_embedded_hal_digital_blocking_OutputPin,
-{
-    fn size(&self) -> Size {
-        Size::new(240, 536)
-    }
-}
-
-impl<CS> DrawTarget for RM67162<'_, SPI2, CS>
-where
-    CS: eh1::_embedded_hal_digital_blocking_OutputPin,
-{
-    type Color = Rgb565;
-
-    type Error = ();
-
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = embedded_graphics::Pixel<Self::Color>>,
-    {
-        for Pixel(pt, color) in pixels {
-            if pt.x < 0 || pt.y < 0 {
-                continue;
-            }
-
-            self.draw_raw_point(pt.x as u16, pt.y as u16, color.to_be_bytes())?;
-        }
-        Ok(())
-    }
-
-    fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
-        self.fill_color(
-            area.top_left.x as u16,
-            area.top_left.y as u16,
-            area.size.width as u16,
-            area.size.height as u16,
-            color.to_be_bytes(),
-        )?;
-        Ok(())
-    }
-
-    fn fill_contiguous<I>(&mut self, area: &Rectangle, colors: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Self::Color>,
-    {
-        self.fill_colors(
-            area.top_left.x as u16,
-            area.top_left.y as u16,
-            area.size.width as u16,
-            area.size.height as u16,
-            colors.into_iter().map(|c| c.to_be_bytes()),
-        )?;
-        Ok(())
     }
 }
 
@@ -339,7 +114,7 @@ fn main() -> ! {
         Some(d2),
         Some(d3),
         NO_PIN,       // Some(cs), NOTE: manually control cs
-        80_u32.MHz(), // max 75MHz
+        85_u32.MHz(), // max 75MHz
         hal::spi::SpiMode::Mode0,
         &mut system.peripheral_clock_control,
         &clocks,
@@ -355,10 +130,12 @@ fn main() -> ! {
     let mut cs = cs.into_push_pull_output();
     cs.set_high().unwrap();
 
-    let mut display = RM67162::new(spi, cs);
+    let mut display = t_display_s3_amoled::rm67162::RM67162::new(spi, cs);
     display.reset(&mut rst, &mut delay).unwrap();
     println!("reset display");
     display.init(&mut delay).unwrap();
+    display.set_orientation(t_display_s3_amoled::rm67162::Orientation::LandscapeFlipped);
+
     println!("init display");
 
     display.clear(Rgb565::WHITE).unwrap();
@@ -367,7 +144,7 @@ fn main() -> ! {
     let character_style = MonoTextStyle::new(&FONT_10X20, Rgb565::RED);
     Text::with_alignment(
         "Hello,\nRust World!",
-        Point::new(100, 20 + 40 * 5),
+        Point::new(300, 20),
         character_style,
         Alignment::Center,
     )
@@ -395,7 +172,7 @@ fn main() -> ! {
         .unwrap();
         Text::with_alignment(
             &s,
-            Point::new(100, 20 + 40 * 8),
+            Point::new(100, 40),
             MonoTextStyleBuilder::new()
                 .background_color(Rgb565::BLACK)
                 .text_color(Rgb565::CSS_BISQUE)
