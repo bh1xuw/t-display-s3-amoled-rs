@@ -20,7 +20,9 @@ use hal::{gdma::SuitablePeripheral0, prelude::_embedded_dma_ReadBuffer};
 
 use crate::rm67162::Orientation;
 
-static mut DMA_BUFFER: [u8; 4096] = [0u8; 4096];
+const BUFFER_PIXELS: usize = 4092;
+const BUFFER_SIZE: usize = BUFFER_PIXELS * 2;
+static mut DMA_BUFFER: [u8; BUFFER_SIZE] = [0u8; BUFFER_SIZE];
 
 pub struct RM67162Dma<'a, TX: Tx, RX: Rx, CS> {
     spi: Option<SpiDma<'a, SPI2, TX, RX, SuitablePeripheral0, HalfDuplexMode>>,
@@ -64,7 +66,7 @@ where
         unsafe {
             DMA_BUFFER[..data.len()].copy_from_slice(data);
         }
-        let txbuf = StaticReadBuffer::new(unsafe { &DMA_BUFFER[..] }, data.len());
+        let txbuf = StaticReadBuffer::new(unsafe { DMA_BUFFER.as_ptr() }, data.len());
 
         self.cs.set_low().unwrap();
 
@@ -134,7 +136,7 @@ where
         unsafe {
             DMA_BUFFER[..2].copy_from_slice(&color.to_be_bytes()[..]);
         }
-        let txbuf = StaticReadBuffer::new(unsafe { &DMA_BUFFER[..] }, 2);
+        let txbuf = StaticReadBuffer::new(unsafe { DMA_BUFFER.as_ptr() }, 2);
 
         self.cs.set_low().unwrap();
 
@@ -156,7 +158,7 @@ where
     }
 
     #[inline]
-    fn dma_send_colors(&mut self, txbuf: StaticReadBuffer<'_>, first_send: bool) -> Result<(), ()> {
+    fn dma_send_colors(&mut self, txbuf: StaticReadBuffer, first_send: bool) -> Result<(), ()> {
         let mut spi = self.spi.take().unwrap();
 
         let tx = if first_send {
@@ -193,8 +195,8 @@ where
         let mut i = 0;
 
         for color in colors.into_iter().take(w as usize * h as usize) {
-            if i == 2048 {
-                let txbuf = StaticReadBuffer::new(unsafe { &DMA_BUFFER[..] }, 4096);
+            if i == BUFFER_PIXELS {
+                let txbuf = StaticReadBuffer::new(unsafe { DMA_BUFFER.as_ptr() }, BUFFER_SIZE);
 
                 self.dma_send_colors(txbuf, first_send)?;
                 first_send = false;
@@ -207,7 +209,7 @@ where
             i += 1;
         }
         if i > 0 {
-            let txbuf = StaticReadBuffer::new(unsafe { &DMA_BUFFER[..] }, 2 * i);
+            let txbuf = StaticReadBuffer::new(unsafe { DMA_BUFFER.as_ptr() }, 2 * i);
             self.dma_send_colors(txbuf, first_send)?;
         }
 
@@ -289,21 +291,22 @@ where
 }
 
 #[derive(Copy, Clone)]
-pub struct StaticReadBuffer<'a> {
-    buffer: &'a [u8],
+pub struct StaticReadBuffer {
+    buffer: *const u8,
     len: usize,
 }
 
-impl StaticReadBuffer<'_> {
-    pub fn new(buffer: &[u8], len: usize) -> StaticReadBuffer {
+impl StaticReadBuffer {
+    pub fn new(buffer: *const u8, len: usize) -> StaticReadBuffer {
         StaticReadBuffer { buffer, len }
     }
 }
 
-unsafe impl hal::prelude::_embedded_dma_ReadBuffer for StaticReadBuffer<'_> {
+unsafe impl hal::prelude::_embedded_dma_ReadBuffer for StaticReadBuffer {
     type Word = u8;
 
+    #[inline]
     unsafe fn read_buffer(&self) -> (*const Self::Word, usize) {
-        (self.buffer.as_ptr(), self.len)
+        (self.buffer, self.len)
     }
 }
