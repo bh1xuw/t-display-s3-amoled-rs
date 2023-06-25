@@ -123,7 +123,7 @@ where
         Ok(())
     }
 
-    fn draw_point(&mut self, x: u16, y: u16, color: [u8; 2]) -> Result<(), ()> {
+    fn draw_point(&mut self, x: u16, y: u16, color: Rgb565) -> Result<(), ()> {
         self.set_address(x, y, x, y)?;
         self.cs.set_low().unwrap();
         self.spi
@@ -132,7 +132,7 @@ where
                 Command::Command8(0x32, SpiDataMode::Single),
                 Address::Address24(0x2C << 8, SpiDataMode::Single),
                 0,
-                &color[..],
+                &color.to_be_bytes()[..],
             )
             .unwrap();
         self.cs.set_high().unwrap();
@@ -145,7 +145,7 @@ where
         y: u16,
         w: u16,
         h: u16,
-        mut colors: impl Iterator<Item = [u8; 2]>,
+        mut colors: impl Iterator<Item = Rgb565>,
     ) -> Result<(), ()> {
         self.set_address(x, y, x + w - 1, y + h - 1)?;
         self.cs.set_low().unwrap();
@@ -155,7 +155,7 @@ where
                 Command::Command8(0x32, SpiDataMode::Single),
                 Address::Address24(0x2C << 8, SpiDataMode::Single),
                 0,
-                &colors.next().unwrap()[..],
+                &colors.next().unwrap().to_be_bytes()[..],
             )
             .unwrap();
 
@@ -166,7 +166,7 @@ where
                     Command::None,
                     Address::None,
                     0,
-                    &colors.next().unwrap()[..],
+                    &colors.next().unwrap().to_be_bytes()[..],
                 )
                 .unwrap();
         }
@@ -174,7 +174,7 @@ where
         Ok(())
     }
 
-    fn fill_color(&mut self, x: u16, y: u16, w: u16, h: u16, color: [u8; 2]) -> Result<(), ()> {
+    fn fill_color(&mut self, x: u16, y: u16, w: u16, h: u16, color: Rgb565) -> Result<(), ()> {
         self.set_address(x, y, x + w - 1, y + h - 1)?;
         self.cs.set_low().unwrap();
         self.spi
@@ -183,7 +183,7 @@ where
                 Command::Command8(0x32, SpiDataMode::Single),
                 Address::Address24(0x2C << 8, SpiDataMode::Single),
                 0,
-                &color[..],
+                &color.to_be_bytes()[..],
             )
             .unwrap();
 
@@ -194,7 +194,7 @@ where
                     Command::None,
                     Address::None,
                     0,
-                    &color[..],
+                    &color.to_be_bytes()[..],
                 )
                 .unwrap();
         }
@@ -235,7 +235,7 @@ where
             if pt.x < 0 || pt.y < 0 {
                 continue;
             }
-            self.draw_point(pt.x as u16, pt.y as u16, color.to_be_bytes())?;
+            self.draw_point(pt.x as u16, pt.y as u16, color)?;
         }
         Ok(())
     }
@@ -246,7 +246,7 @@ where
             area.top_left.y as u16,
             area.size.width as u16,
             area.size.height as u16,
-            color.to_be_bytes(),
+            color,
         )?;
         Ok(())
     }
@@ -260,7 +260,7 @@ where
             area.top_left.y as u16,
             area.size.width as u16,
             area.size.height as u16,
-            colors.into_iter().map(|c| c.to_be_bytes()),
+            colors.into_iter(),
         )?;
         Ok(())
     }
