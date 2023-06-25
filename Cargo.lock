@@ -1950,6 +1950,7 @@ dependencies = [
  "esp32s3-hal",
  "slint",
  "slint-build",
+ "tinygif",
 ]
 
 [[package]]
@@ -2022,6 +2023,16 @@ dependencies = [
  "arrayref",
  "bytemuck",
  "strict-num",
+]
+
+[[package]]
+name = "tinygif"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c420c4bbfcae872a993ddd10feb074f2f97f782e9359fbc240901394ab7259ec"
+dependencies = [
+ "embedded-graphics",
+ "heapless",
 ]
 
 [[package]]

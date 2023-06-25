@@ -19,7 +19,9 @@ use hal::{
 
 use crate::rm67162::Orientation;
 
-const BUFFER_PIXELS: usize = 4092;
+pub const SCREEN_SIZE: Size = Size::new(240, 536);
+
+const BUFFER_PIXELS: usize = 16368 / 2;
 const BUFFER_SIZE: usize = BUFFER_PIXELS * 2;
 static mut DMA_BUFFER: [u8; BUFFER_SIZE] = [0u8; BUFFER_SIZE];
 
@@ -185,8 +187,36 @@ where
 
         self.cs.set_low().unwrap();
         let txbuf = StaticReadBuffer::new(raw_colors.as_ptr(), raw_colors.len());
-
         self.dma_send_colors(txbuf, true)?;
+        self.cs.set_high().unwrap();
+        Ok(())
+    }
+
+    /// Use a framebuffer to fill the screen.
+    /* Framebuffer::<
+        Rgb565,
+        _,
+        BigEndian,
+        536,
+        240,
+        { embedded_graphics::framebuffer::buffer_size::<Rgb565>(536, 240) },
+    > */
+    pub unsafe fn fill_with_framebuffer(&mut self, raw_framebuffer: &[u8]) -> Result<(), ()> {
+        self.set_address(
+            0,
+            0,
+            self.size().width as u16 - 1,
+            self.size().height as u16 - 1,
+        )?;
+
+        let mut first_send = true;
+        self.cs.set_low().unwrap();
+
+        for chunk in raw_framebuffer.chunks(BUFFER_SIZE) {
+            let txbuf = StaticReadBuffer::new(chunk.as_ptr(), chunk.len());
+            self.dma_send_colors(txbuf, first_send)?;
+            first_send = false;
+        }
 
         self.cs.set_high().unwrap();
         Ok(())

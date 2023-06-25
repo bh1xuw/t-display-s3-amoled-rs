@@ -102,8 +102,7 @@ fn main() -> ! {
     let dma_channel = dma.channel0;
 
     // Descriptors should be sized as (BUFFERSIZE / 4092) * 3
-    // 8184 / 4092 * 3 = 6
-    let mut descriptors = [0u32; 6];
+    let mut descriptors = [0u32; 12];
     let spi = Spi::new_half_duplex(
         peripherals.SPI2, // use spi2 host
         Some(sclk),
