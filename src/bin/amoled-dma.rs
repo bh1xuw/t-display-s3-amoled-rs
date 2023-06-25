@@ -119,7 +119,7 @@ fn main() -> ! {
     )
     .with_dma(dma_channel.configure(false, &mut descriptors, &mut [], DmaPriority::Priority0));
 
-    let mut display = t_display_s3_amoled::rm67162dma::RM67162Dma::new(spi, cs);
+    let mut display = t_display_s3_amoled::rm67162::dma::RM67162Dma::new(spi, cs);
     display.reset(&mut rst, &mut delay).unwrap();
     display.init(&mut delay).unwrap();
     display

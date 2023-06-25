@@ -13,6 +13,8 @@ use hal::{
     Spi,
 };
 
+pub mod dma;
+
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub enum Orientation {
     Portrait,
