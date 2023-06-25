@@ -2,8 +2,9 @@
 
 ## What is it?
 
-This is a Rust BSP for the T-Display S3 AMOLED board.
+This is a Rust BSP for the Lilygo's T-Display S3 AMOLED board.
 
+- RM67162 AMOLED driver in QSPI mode
 - RM67162 AMOLED driver with DMA support
 
 ## On-board peripherals

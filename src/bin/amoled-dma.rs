@@ -144,7 +144,6 @@ fn main() -> ! {
     loop {
         // fps testing
         let mut s = String::new();
-
         let elapsed = now_ms() - started;
         core::write!(
             &mut s,

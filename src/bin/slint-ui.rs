@@ -205,11 +205,11 @@ fn main() -> ! {
     loop {
         slint::platform::update_timers_and_animations();
 
-            ui.set_counter(i);
-            i += 1;
-            if i > 100 {
-                i = 0;
-            }
+        ui.set_counter(i);
+        i += 1;
+        if i > 100 {
+            i = 0;
+        }
 
         // Draw the scene if something needs to be drawn.
         window.draw_if_needed(|renderer| {
