@@ -1,6 +1,6 @@
 //! On-board RM67162 AMOLED screen driver
 
-use core::{iter, ops};
+use core::iter;
 
 use embedded_graphics::{
     pixelcolor::{raw::ToBytes, Rgb565},
@@ -9,14 +9,13 @@ use embedded_graphics::{
     Pixel,
 };
 use embedded_hal_1::{delay::DelayUs, digital::OutputPin};
+use hal::gdma::SuitablePeripheral0;
 use hal::{
     dma::{Rx, Tx},
     peripherals::SPI2,
     prelude::_esp_hal_dma_DmaTransfer,
-    spi::{dma::SpiDma, Address, Command, HalfDuplexMode, HalfDuplexReadWrite, SpiDataMode},
-    Spi,
+    spi::{dma::SpiDma, Address, Command, HalfDuplexMode, SpiDataMode},
 };
-use hal::{gdma::SuitablePeripheral0, prelude::_embedded_dma_ReadBuffer};
 
 use crate::rm67162::Orientation;
 
@@ -63,11 +62,7 @@ where
     }
 
     fn send_cmd(&mut self, cmd: u32, data: &[u8]) -> Result<(), ()> {
-        unsafe {
-            DMA_BUFFER[..data.len()].copy_from_slice(data);
-        }
-        let txbuf = StaticReadBuffer::new(unsafe { DMA_BUFFER.as_ptr() }, data.len());
-
+        let txbuf = StaticReadBuffer::new(data.as_ptr(), data.len());
         self.cs.set_low().unwrap();
 
         let mut spi = self.spi.take().unwrap();
@@ -133,10 +128,8 @@ where
     fn draw_point(&mut self, x: u16, y: u16, color: Rgb565) -> Result<(), ()> {
         self.set_address(x, y, x, y)?;
 
-        unsafe {
-            DMA_BUFFER[..2].copy_from_slice(&color.to_be_bytes()[..]);
-        }
-        let txbuf = StaticReadBuffer::new(unsafe { DMA_BUFFER.as_ptr() }, 2);
+        let raw = color.to_be_bytes();
+        let txbuf = StaticReadBuffer::new(raw.as_ptr(), 2);
 
         self.cs.set_low().unwrap();
 
@@ -200,7 +193,6 @@ where
 
                 self.dma_send_colors(txbuf, first_send)?;
                 first_send = false;
-
                 i = 0;
             }
             unsafe {
@@ -259,6 +251,7 @@ where
             if pt.x < 0 || pt.y < 0 {
                 continue;
             }
+
             self.draw_point(pt.x as u16, pt.y as u16, color)?;
         }
         Ok(())
