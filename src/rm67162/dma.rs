@@ -78,7 +78,7 @@ where
                 txbuf,
             )
             .unwrap();
-        (_, spi) = tx.wait();
+        (_, spi) = tx.wait().unwrap();
         self.spi.replace(spi);
 
         self.cs.set_high().unwrap();
@@ -146,7 +146,7 @@ where
                 txbuf,
             )
             .unwrap();
-        (_, spi) = tx.wait();
+        (_, spi) = tx.wait().unwrap();
         self.spi.replace(spi);
 
         self.cs.set_high().unwrap();
@@ -170,7 +170,7 @@ where
             spi.write(SpiDataMode::Quad, Command::None, Address::None, 0, txbuf)
                 .unwrap()
         };
-        (_, spi) = tx.wait();
+        (_, spi) = tx.wait().unwrap();
         self.spi.replace(spi);
         Ok(())
     }
@@ -330,7 +330,7 @@ where
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct StaticReadBuffer {
     buffer: *const u8,
     len: usize,
