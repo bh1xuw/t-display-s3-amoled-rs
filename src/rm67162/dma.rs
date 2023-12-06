@@ -11,10 +11,8 @@ use embedded_graphics::{
 use embedded_hal_1::{delay::DelayUs, digital::OutputPin};
 
 use hal::{
-    dma::{Rx, Tx},
-    peripherals::SPI2,
     prelude::_esp_hal_dma_DmaTransfer,
-    spi::{dma::SpiDma, Address, Command, HalfDuplexMode, SpiDataMode},
+    spi::{HalfDuplexMode, SpiDataMode, master::{dma::SpiDma, Command, Address}},
 };
 
 use crate::rm67162::Orientation;

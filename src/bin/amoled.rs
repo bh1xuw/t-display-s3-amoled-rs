@@ -17,13 +17,15 @@ use hal::gpio::NO_PIN;
 use hal::prelude::_fugit_RateExtU32;
 use hal::systimer::SystemTimer;
 use hal::{
-    adc::{AdcConfig, Attenuation, ADC, ADC1},
     clock::ClockControl,
     peripherals::Peripherals,
     prelude::*,
     timer::TimerGroup,
-    Delay, Rtc, Spi, IO,
+    Delay, Rtc, IO,
 };
+use hal::spi::master::Spi;
+
+
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
@@ -48,13 +50,11 @@ fn main() -> ! {
     let timer_group0 = TimerGroup::new(
         peripherals.TIMG0,
         &clocks,
-        &mut system.peripheral_clock_control,
     );
     let mut wdt0 = timer_group0.wdt;
     let timer_group1 = TimerGroup::new(
         peripherals.TIMG1,
         &clocks,
-        &mut system.peripheral_clock_control,
     );
     let mut wdt1 = timer_group1.wdt;
     rtc.rwdt.disable();
@@ -96,7 +96,6 @@ fn main() -> ! {
         NO_PIN,       // Some(cs), NOTE: manually control cs
         85_u32.MHz(), // max 75MHz
         hal::spi::SpiMode::Mode0,
-        &mut system.peripheral_clock_control,
         &clocks,
     );
 

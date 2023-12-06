@@ -4,6 +4,7 @@
 extern crate alloc;
 
 use alloc::string::String;
+use hal::spi::master::Spi;
 use core::fmt::Write;
 use core::mem::MaybeUninit;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
@@ -19,9 +20,10 @@ use hal::gpio::NO_PIN;
 use hal::prelude::_fugit_RateExtU32;
 use hal::systimer::SystemTimer;
 use hal::{
-    clock::ClockControl, peripherals::Peripherals, prelude::*, timer::TimerGroup, Delay, Rtc, Spi,
+    clock::ClockControl, peripherals::Peripherals, prelude::*, timer::TimerGroup, Delay, Rtc,
     IO,
 };
+use hal::spi::master::prelude::*;
 use t_display_s3_amoled::rm67162::Orientation;
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -42,19 +44,16 @@ fn main() -> ! {
     let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
-    let mut peripheral_clock_control = system.peripheral_clock_control;
     // Disable the RTC and TIMG watchdog timers
     let mut rtc = Rtc::new(peripherals.RTC_CNTL);
     let timer_group0 = TimerGroup::new(
         peripherals.TIMG0,
         &clocks,
-        &mut peripheral_clock_control,
     );
     let mut wdt0 = timer_group0.wdt;
     let timer_group1 = TimerGroup::new(
         peripherals.TIMG1,
         &clocks,
-        &mut peripheral_clock_control,
     );
     let mut wdt1 = timer_group1.wdt;
     rtc.rwdt.disable();
@@ -90,7 +89,7 @@ fn main() -> ! {
 
     let mut rst = rst.into_push_pull_output();
 
-    let dma = Gdma::new(peripherals.DMA,&mut peripheral_clock_control);
+    let dma = Gdma::new(peripherals.DMA);
     let dma_channel = dma.channel0;
 
     // Descriptors should be sized as (BUFFERSIZE / 4092) * 3
@@ -105,7 +104,6 @@ fn main() -> ! {
         NO_PIN,       // Some(cs), NOTE: manually control cs
         75_u32.MHz(), // max 75MHz
         hal::spi::SpiMode::Mode0,
-        &mut peripheral_clock_control,
         &clocks,
     )
     .with_dma(dma_channel.configure(false, &mut descriptors, &mut [], DmaPriority::Priority0));
