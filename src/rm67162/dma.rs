@@ -9,7 +9,7 @@ use embedded_graphics::{
     Pixel,
 };
 use embedded_hal_1::{delay::DelayUs, digital::OutputPin};
-use hal::gdma::SuitablePeripheral0;
+
 use hal::{
     dma::{Rx, Tx},
     peripherals::SPI2,
@@ -25,22 +25,23 @@ const BUFFER_PIXELS: usize = 16368 / 2;
 const BUFFER_SIZE: usize = BUFFER_PIXELS * 2;
 static mut DMA_BUFFER: [u8; BUFFER_SIZE] = [0u8; BUFFER_SIZE];
 
-pub struct RM67162Dma<'a, TX: Tx, RX: Rx, CS> {
-    spi: Option<SpiDma<'a, SPI2, TX, RX, SuitablePeripheral0, HalfDuplexMode>>,
+pub type SpiType<'d> =
+    SpiDma<'d, hal::peripherals::SPI2, hal::gdma::Channel0, HalfDuplexMode>;
+
+pub struct RM67162Dma<'a, CS> {
+    spi: Option<SpiType<'a>>,
     cs: CS,
     orientation: Orientation,
 }
 
-impl<TX, RX, CS> RM67162Dma<'_, TX, RX, CS>
+impl<CS> RM67162Dma<'_, CS>
 where
     CS: OutputPin,
-    TX: Tx,
-    RX: Rx,
 {
     pub fn new<'a>(
-        spi: SpiDma<'a, SPI2, TX, RX, SuitablePeripheral0, HalfDuplexMode>,
+        spi: SpiType<'a>,
         cs: CS,
-    ) -> RM67162Dma<'a, TX, RX, CS> {
+    ) -> RM67162Dma<'a, CS> {
         RM67162Dma {
             spi: Some(spi),
             cs,
@@ -265,10 +266,8 @@ where
     }
 }
 
-impl<TX, RX, CS> OriginDimensions for RM67162Dma<'_, TX, RX, CS>
+impl<CS> OriginDimensions for RM67162Dma<'_, CS>
 where
-    TX: Tx,
-    RX: Rx,
     CS: OutputPin,
 {
     fn size(&self) -> Size {
@@ -283,10 +282,8 @@ where
     }
 }
 
-impl<TX, RX, CS> DrawTarget for RM67162Dma<'_, TX, RX, CS>
+impl<CS> DrawTarget for RM67162Dma<'_, CS>
 where
-    TX: Tx,
-    RX: Rx,
     CS: OutputPin,
 {
     type Color = Rgb565;

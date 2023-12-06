@@ -72,12 +72,12 @@ impl Platform for Backend {
     }
 }
 
-struct DisplayWrapper<'a, TX: Tx, RX: Rx, CS> {
-    display: &'a mut RM67162Dma<'a, TX, RX, CS>,
+struct DisplayWrapper<'a, CS> {
+    display: &'a mut RM67162Dma<'a,CS>,
     line_buffer: &'a mut [Rgb565Pixel; 536],
 }
 
-impl<TX: Tx, RX: Rx, CS> renderer::LineBufferProvider for &mut DisplayWrapper<'_, TX, RX, CS>
+impl<CS> renderer::LineBufferProvider for &mut DisplayWrapper<'_, CS>
 where
     CS: embedded_hal_1::digital::OutputPin,
 {

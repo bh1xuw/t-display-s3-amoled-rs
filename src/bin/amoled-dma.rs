@@ -48,21 +48,22 @@ fn init_heap() {
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let mut system = peripherals.SYSTEM.split();
+    let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
+    let mut peripheral_clock_control = system.peripheral_clock_control;
     // Disable the RTC and TIMG watchdog timers
     let mut rtc = Rtc::new(peripherals.RTC_CNTL);
     let timer_group0 = TimerGroup::new(
         peripherals.TIMG0,
         &clocks,
-        &mut system.peripheral_clock_control,
+        &mut peripheral_clock_control,
     );
     let mut wdt0 = timer_group0.wdt;
     let timer_group1 = TimerGroup::new(
         peripherals.TIMG1,
         &clocks,
-        &mut system.peripheral_clock_control,
+        &mut peripheral_clock_control,
     );
     let mut wdt1 = timer_group1.wdt;
     rtc.rwdt.disable();
@@ -98,7 +99,7 @@ fn main() -> ! {
 
     let mut rst = rst.into_push_pull_output();
 
-    let dma = Gdma::new(peripherals.DMA, &mut system.peripheral_clock_control);
+    let dma = Gdma::new(peripherals.DMA,&mut peripheral_clock_control);
     let dma_channel = dma.channel0;
 
     // Descriptors should be sized as (BUFFERSIZE / 4092) * 3
@@ -113,7 +114,7 @@ fn main() -> ! {
         NO_PIN,       // Some(cs), NOTE: manually control cs
         75_u32.MHz(), // max 75MHz
         hal::spi::SpiMode::Mode0,
-        &mut system.peripheral_clock_control,
+        &mut peripheral_clock_control,
         &clocks,
     )
     .with_dma(dma_channel.configure(false, &mut descriptors, &mut [], DmaPriority::Priority0));
