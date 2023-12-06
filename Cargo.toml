@@ -13,7 +13,7 @@ keywords = ["rm67162", "amoled"]
 readme = "README.md"
 
 [dependencies]
-hal = { package = "esp32s3-hal", version = "0.11.0", features = [
+hal = { package = "esp32s3-hal", version = "0.12.0", features = [
     "async",
     "embassy",
     "embassy-time-systick",
