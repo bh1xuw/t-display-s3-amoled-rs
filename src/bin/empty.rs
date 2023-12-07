@@ -25,7 +25,7 @@ fn init_heap() {
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let mut system = peripherals.SYSTEM.split();
+    let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
@@ -48,7 +48,7 @@ fn main() -> ! {
     // Set GPIO4 as an output, and set its state high initially.
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
     let mut led = io.pins.gpio38.into_push_pull_output();
-    let mut button = io.pins.gpio21.into_pull_down_input();
+    let _button = io.pins.gpio21.into_pull_down_input();
 
     led.set_high().unwrap();
 

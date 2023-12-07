@@ -13,7 +13,6 @@ use embedded_graphics::prelude::{DrawTarget, Point, Size};
 use embedded_graphics::primitives::Rectangle;
 use esp_backtrace as _;
 use esp_println::println;
-use hal::dma::{Rx, Tx};
 use hal::spi::master::Spi;
 use hal::systimer::SystemTimer;
 use hal::{
@@ -23,7 +22,7 @@ use hal::{
 use hal::spi::master::prelude::*;
 
 use slint::platform::software_renderer::{MinimalSoftwareWindow, Rgb565Pixel};
-use slint::platform::{software_renderer as renderer, Platform, WindowEvent};
+use slint::platform::{software_renderer as renderer, Platform};
 use slint::PhysicalSize;
 
 use t_display_s3_amoled::rm67162::dma::RM67162Dma;
@@ -103,7 +102,7 @@ where
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let mut system = peripherals.SYSTEM.split();
+    let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
@@ -126,7 +125,7 @@ fn main() -> ! {
     // Set GPIO4 as an output, and set its state high initially.
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
     let mut led = io.pins.gpio38.into_push_pull_output();
-    let mut button = io.pins.gpio21.into_pull_down_input();
+    let _button = io.pins.gpio21.into_pull_down_input();
 
     led.set_high().unwrap();
 
@@ -186,7 +185,7 @@ fn main() -> ! {
     window.set_size(PhysicalSize::new(536, 240));
 
     let ui = AppWindow::new().unwrap();
-    let ui_handle = ui.as_weak();
+    let _ui_handle = ui.as_weak();
 
     let mut line_buffer = [Rgb565Pixel(0); 536];
     let mut wrapper = DisplayWrapper {
@@ -213,6 +212,6 @@ fn main() -> ! {
             // if no animation is running, wait for the next input event
         }
 
-        led.toggle();
+        led.toggle().unwrap();
     }
 }

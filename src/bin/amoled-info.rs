@@ -14,7 +14,7 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::text::{Alignment, Text};
 use esp_backtrace as _;
 use esp_println::println;
-use hal::adc::{AdcConfig, Attenuation, ADC, ADC1, ADC2};
+use hal::adc::{AdcConfig, Attenuation, ADC, ADC2};
 use hal::dma::DmaPriority;
 use hal::gdma::Gdma;
 use hal::gpio::NO_PIN;
@@ -43,7 +43,7 @@ fn init_heap() {
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let mut system = peripherals.SYSTEM.split();
+    let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers

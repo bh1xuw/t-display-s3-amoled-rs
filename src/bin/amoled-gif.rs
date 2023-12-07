@@ -6,12 +6,11 @@ extern crate alloc;
 use hal::spi::master::Spi;
 use core::mem::MaybeUninit;
 use embedded_graphics::framebuffer::Framebuffer;
-use embedded_graphics::mono_font::ascii::FONT_10X20;
-use embedded_graphics::mono_font::{MonoTextStyle, MonoTextStyleBuilder};
-use embedded_graphics::pixelcolor::raw::{BigEndian, LittleEndian};
+
+use embedded_graphics::pixelcolor::raw::{BigEndian};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
-use embedded_graphics::text::{Alignment, Text};
+
 use esp_backtrace as _;
 use esp_println::println;
 use hal::dma::DmaPriority;
@@ -19,7 +18,6 @@ use hal::gdma::Gdma;
 use hal::gpio::NO_PIN;
 use hal::prelude::_fugit_RateExtU32;
 use hal::spi::master::prelude::*;
-use hal::systimer::SystemTimer;
 use hal::{
     clock::ClockControl, peripherals::Peripherals, prelude::*, timer::TimerGroup, Delay, Rtc,
     IO,
@@ -41,7 +39,7 @@ fn init_heap() {
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let mut system = peripherals.SYSTEM.split();
+    let  system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
@@ -128,7 +126,7 @@ fn main() -> ! {
         240,
         { embedded_graphics::framebuffer::buffer_size::<Rgb565>(536, 240) },
     >::new();
-    fb.clear(Rgb565::WHITE);
+    fb.clear(Rgb565::WHITE).unwrap();
 
     loop {
         for frame in gif.frames() {
