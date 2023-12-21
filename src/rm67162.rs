@@ -9,8 +9,7 @@ use embedded_graphics::{
 use embedded_hal_1::{delay::DelayUs, digital::OutputPin};
 use hal::{
     peripherals::SPI2,
-    spi::{Address, Command, HalfDuplexMode, HalfDuplexReadWrite, SpiDataMode},
-    Spi,
+    spi::{HalfDuplexMode, SpiDataMode, master::{Spi, Command, Address, HalfDuplexReadWrite}},
 };
 
 pub mod dma;
