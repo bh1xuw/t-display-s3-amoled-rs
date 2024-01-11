@@ -5,6 +5,7 @@ extern crate alloc;
 
 use alloc::string::String;
 use core::fmt::Write;
+use core::mem::MaybeUninit;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::{MonoTextStyle, MonoTextStyleBuilder};
 use embedded_graphics::pixelcolor::Rgb565;
@@ -16,32 +17,24 @@ use hal::gpio::NO_PIN;
 use hal::prelude::_fugit_RateExtU32;
 use hal::systimer::SystemTimer;
 use hal::{
-    adc::{AdcConfig, Attenuation, ADC, ADC1},
     clock::ClockControl,
     peripherals::Peripherals,
     prelude::*,
     timer::TimerGroup,
-    Delay, Rtc, Spi, IO,
+    Delay, Rtc, IO,
 };
+use hal::spi::master::Spi;
+
+
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
-fn init_heap() {
+fn init_heap() {    
     const HEAP_SIZE: usize = 32 * 1024;
-
-    extern "C" {
-        static mut _heap_start: u32;
-        static mut _heap_end: u32;
-    }
+    static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
-        let heap_start = &_heap_start as *const _ as usize;
-        let heap_end = &_heap_end as *const _ as usize;
-        assert!(
-            heap_end - heap_start > HEAP_SIZE,
-            "Not enough available heap memory."
-        );
-        ALLOCATOR.init(heap_start as *mut u8, HEAP_SIZE);
+        ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
     }
 }
 
@@ -49,7 +42,7 @@ fn init_heap() {
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let mut system = peripherals.SYSTEM.split();
+    let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
@@ -57,13 +50,11 @@ fn main() -> ! {
     let timer_group0 = TimerGroup::new(
         peripherals.TIMG0,
         &clocks,
-        &mut system.peripheral_clock_control,
     );
     let mut wdt0 = timer_group0.wdt;
     let timer_group1 = TimerGroup::new(
         peripherals.TIMG1,
         &clocks,
-        &mut system.peripheral_clock_control,
     );
     let mut wdt1 = timer_group1.wdt;
     rtc.rwdt.disable();
@@ -105,7 +96,6 @@ fn main() -> ! {
         NO_PIN,       // Some(cs), NOTE: manually control cs
         85_u32.MHz(), // max 75MHz
         hal::spi::SpiMode::Mode0,
-        &mut system.peripheral_clock_control,
         &clocks,
     );
 

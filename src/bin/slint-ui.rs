@@ -3,6 +3,8 @@
 
 extern crate alloc;
 
+use core::mem::MaybeUninit;
+
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 
@@ -11,37 +13,30 @@ use embedded_graphics::prelude::{DrawTarget, Point, Size};
 use embedded_graphics::primitives::Rectangle;
 use esp_backtrace as _;
 use esp_println::println;
-use hal::dma::{Rx, Tx};
+use hal::spi::master::Spi;
 use hal::systimer::SystemTimer;
 use hal::{
     clock::ClockControl, dma::DmaPriority, gdma::Gdma, gpio::NO_PIN, peripherals::Peripherals,
-    prelude::*, timer::TimerGroup, Delay, Rtc, Spi, IO,
+    prelude::*, timer::TimerGroup, Delay, Rtc, IO,
 };
+use hal::spi::master::prelude::*;
+
 use slint::platform::software_renderer::{MinimalSoftwareWindow, Rgb565Pixel};
-use slint::platform::{software_renderer as renderer, Platform, WindowEvent};
+use slint::platform::{software_renderer as renderer, Platform};
 use slint::PhysicalSize;
 
 use t_display_s3_amoled::rm67162::dma::RM67162Dma;
 use t_display_s3_amoled::rm67162::Orientation;
+
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
-fn init_heap() {
+fn init_heap() {    
     const HEAP_SIZE: usize = 32 * 1024;
-
-    extern "C" {
-        static mut _heap_start: u32;
-        static mut _heap_end: u32;
-    }
+    static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
-        let heap_start = &_heap_start as *const _ as usize;
-        let heap_end = &_heap_end as *const _ as usize;
-        assert!(
-            heap_end - heap_start > HEAP_SIZE,
-            "Not enough available heap memory."
-        );
-        ALLOCATOR.init(heap_start as *mut u8, HEAP_SIZE);
+        ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
     }
 }
 
@@ -72,12 +67,12 @@ impl Platform for Backend {
     }
 }
 
-struct DisplayWrapper<'a, TX: Tx, RX: Rx, CS> {
-    display: &'a mut RM67162Dma<'a, TX, RX, CS>,
+struct DisplayWrapper<'a, CS> {
+    display: &'a mut RM67162Dma<'a,CS>,
     line_buffer: &'a mut [Rgb565Pixel; 536],
 }
 
-impl<TX: Tx, RX: Rx, CS> renderer::LineBufferProvider for &mut DisplayWrapper<'_, TX, RX, CS>
+impl<CS> renderer::LineBufferProvider for &mut DisplayWrapper<'_, CS>
 where
     CS: embedded_hal_1::digital::OutputPin,
 {
@@ -107,7 +102,7 @@ where
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let mut system = peripherals.SYSTEM.split();
+    let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
@@ -115,13 +110,11 @@ fn main() -> ! {
     let timer_group0 = TimerGroup::new(
         peripherals.TIMG0,
         &clocks,
-        &mut system.peripheral_clock_control,
     );
     let mut wdt0 = timer_group0.wdt;
     let timer_group1 = TimerGroup::new(
         peripherals.TIMG1,
         &clocks,
-        &mut system.peripheral_clock_control,
     );
     let mut wdt1 = timer_group1.wdt;
     rtc.rwdt.disable();
@@ -132,7 +125,7 @@ fn main() -> ! {
     // Set GPIO4 as an output, and set its state high initially.
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
     let mut led = io.pins.gpio38.into_push_pull_output();
-    let mut button = io.pins.gpio21.into_pull_down_input();
+    let _button = io.pins.gpio21.into_pull_down_input();
 
     led.set_high().unwrap();
 
@@ -156,7 +149,7 @@ fn main() -> ! {
 
     let mut rst = rst.into_push_pull_output();
 
-    let dma = Gdma::new(peripherals.DMA, &mut system.peripheral_clock_control);
+    let dma = Gdma::new(peripherals.DMA);
     let dma_channel = dma.channel0;
 
     // Descriptors should be sized as (BUFFERSIZE / 4092) * 3
@@ -171,7 +164,6 @@ fn main() -> ! {
         NO_PIN,
         75_u32.MHz(), // max 75MHz
         hal::spi::SpiMode::Mode0,
-        &mut system.peripheral_clock_control,
         &clocks,
     )
     .with_dma(dma_channel.configure(false, &mut descriptors, &mut [], DmaPriority::Priority0));
@@ -193,7 +185,7 @@ fn main() -> ! {
     window.set_size(PhysicalSize::new(536, 240));
 
     let ui = AppWindow::new().unwrap();
-    let ui_handle = ui.as_weak();
+    let _ui_handle = ui.as_weak();
 
     let mut line_buffer = [Rgb565Pixel(0); 536];
     let mut wrapper = DisplayWrapper {
@@ -220,6 +212,6 @@ fn main() -> ! {
             // if no animation is running, wait for the next input event
         }
 
-        led.toggle();
+        led.toggle().unwrap();
     }
 }
