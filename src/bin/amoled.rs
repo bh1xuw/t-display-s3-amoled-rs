@@ -46,7 +46,7 @@ fn main() -> ! {
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
-    let mut rtc = Rtc::new(peripherals.RTC_CNTL);
+    let mut rtc = Rtc::new(peripherals.LPWR);
     let timer_group0 = TimerGroup::new(
         peripherals.TIMG0,
         &clocks,
@@ -85,19 +85,12 @@ fn main() -> ! {
     let mut rst = rst.into_push_pull_output();
 
     led.set_high().unwrap();
-
     let spi = Spi::new_half_duplex(
         peripherals.SPI2, // use spi2 host
-        Some(sclk),
-        Some(d0),
-        Some(d1),
-        Some(d2),
-        Some(d3),
-        NO_PIN,       // Some(cs), NOTE: manually control cs
-        85_u32.MHz(), // max 75MHz
+        75_u32.MHz(), // max 75MHz
         hal::spi::SpiMode::Mode0,
-        &clocks,
-    );
+        &clocks)
+        .with_pins(Some(sclk),Some(d0),Some(d1),Some(d2),Some(d3),NO_PIN);
 
     let mut cs = cs.into_push_pull_output();
     cs.set_high().unwrap();
