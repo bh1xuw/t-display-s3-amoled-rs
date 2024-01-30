@@ -7,7 +7,7 @@ use hal::spi::master::Spi;
 use core::mem::MaybeUninit;
 use embedded_graphics::framebuffer::Framebuffer;
 
-use embedded_graphics::pixelcolor::raw::{BigEndian};
+use embedded_graphics::pixelcolor::raw::BigEndian;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 
@@ -43,7 +43,7 @@ fn main() -> ! {
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
-    let mut rtc = Rtc::new(peripherals.RTC_CNTL);
+    let mut rtc = Rtc::new(peripherals.LPWR);
     let timer_group0 = TimerGroup::new(
         peripherals.TIMG0,
         &clocks,
@@ -94,17 +94,11 @@ fn main() -> ! {
     let mut descriptors = [0u32; 12];
     let spi = Spi::new_half_duplex(
         peripherals.SPI2, // use spi2 host
-        Some(sclk),
-        Some(d0),
-        Some(d1),
-        Some(d2),
-        Some(d3),
-        NO_PIN,       // Some(cs), NOTE: manually control cs
         75_u32.MHz(), // max 75MHz
         hal::spi::SpiMode::Mode0,
-        &clocks,
-    )
-    .with_dma(dma_channel.configure(false, &mut descriptors, &mut [], DmaPriority::Priority0));
+        &clocks)
+        .with_pins(Some(sclk),Some(d0),Some(d1),Some(d2),Some(d3),NO_PIN)
+        .with_dma(dma_channel.configure(false, &mut descriptors, &mut [], DmaPriority::Priority0));
 
     let mut display = t_display_s3_amoled::rm67162::dma::RM67162Dma::new(spi, cs);
     display.reset(&mut rst, &mut delay).unwrap();

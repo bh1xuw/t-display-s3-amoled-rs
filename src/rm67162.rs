@@ -6,7 +6,7 @@ use embedded_graphics::{
     primitives::Rectangle,
     Pixel,
 };
-use embedded_hal_1::{delay::DelayUs, digital::OutputPin};
+use embedded_hal_1::{delay::DelayNs, digital::OutputPin};
 use hal::{
     peripherals::SPI2,
     spi::{HalfDuplexMode, SpiDataMode, master::{Spi, Command, Address, HalfDuplexReadWrite}},
@@ -57,7 +57,7 @@ where
         self.send_cmd(0x36, &[self.orientation.to_madctr()])
     }
 
-    pub fn reset(&self, rst: &mut impl OutputPin, delay: &mut impl DelayUs) -> Result<(), ()> {
+    pub fn reset(&self, rst: &mut impl OutputPin, delay: &mut impl DelayNs) -> Result<(), ()> {
         rst.set_low().unwrap();
         delay.delay_ms(300);
 
@@ -82,7 +82,7 @@ where
     }
 
     // rm67162_qspi_init
-    pub fn init(&mut self, delay: &mut impl embedded_hal_1::delay::DelayUs) -> Result<(), ()> {
+    pub fn init(&mut self, delay: &mut impl embedded_hal_1::delay::DelayNs) -> Result<(), ()> {
         for _ in 0..3 {
             self.send_cmd(0x11, &[])?; // sleep out
             delay.delay_ms(120);
