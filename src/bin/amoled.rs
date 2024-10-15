@@ -15,13 +15,15 @@ use esp_backtrace as _;
 use esp_println::println;
 use hal::gpio::NO_PIN;
 use hal::prelude::_fugit_RateExtU32;
-use hal::systimer::SystemTimer;
+use hal::timer::systimer::SystemTimer;
 use hal::{
     clock::ClockControl,
     peripherals::Peripherals,
     prelude::*,
-    timer::TimerGroup,
-    Delay, Rtc, IO,
+    system::SystemControl,
+    timer::timg::TimerGroup,
+    delay::Delay, rtc_cntl::Rtc,
+    gpio::{Io, Output, Level},
 };
 use hal::spi::master::Spi;
 
@@ -42,7 +44,7 @@ fn init_heap() {
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let system = peripherals.SYSTEM.split();
+    let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
@@ -67,8 +69,8 @@ fn main() -> ! {
     let mut delay = Delay::new(&clocks);
 
     // Set GPIO4 as an output, and set its state high initially.
-    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
-    let mut led = io.pins.gpio38.into_push_pull_output();
+    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+    let mut led = Output::new(io.pins.gpio38, Level::Low);
     //let user_btn = io.pins.gpio21.into_pull_down_input();
     //let boot0_btn = io.pins.gpio0.into_pull_up_input(); // default pull up
     println!("GPIO init OK");
@@ -82,9 +84,9 @@ fn main() -> ! {
     let d2 = io.pins.gpio48;
     let d3 = io.pins.gpio5;
 
-    let mut rst = rst.into_push_pull_output();
+    let mut rst = Output::new(rst, Level::Low);
 
-    led.set_high().unwrap();
+    led.set_high();
     let spi = Spi::new_half_duplex(
         peripherals.SPI2, // use spi2 host
         75_u32.MHz(), // max 75MHz
@@ -92,8 +94,7 @@ fn main() -> ! {
         &clocks)
         .with_pins(Some(sclk),Some(d0),Some(d1),Some(d2),Some(d3),NO_PIN);
 
-    let mut cs = cs.into_push_pull_output();
-    cs.set_high().unwrap();
+    let cs = Output::new(cs, Level::High);
 
     let mut display = t_display_s3_amoled::rm67162::RM67162::new(spi, cs);
     display.reset(&mut rst, &mut delay).unwrap();

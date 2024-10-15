@@ -14,14 +14,14 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::text::{Alignment, Text};
 use esp_backtrace as _;
 use esp_println::println;
-use hal::dma::DmaPriority;
-use hal::gdma::Gdma;
-use hal::gpio::NO_PIN;
+use hal::dma::{Dma, DmaDescriptor, DmaPriority};
+use hal::gpio::{Io, Level, NO_PIN, Output};
 use hal::prelude::_fugit_RateExtU32;
-use hal::systimer::SystemTimer;
+use hal::timer::{timg::TimerGroup, systimer::SystemTimer};
 use hal::{
-    clock::ClockControl, peripherals::Peripherals, prelude::*, timer::TimerGroup, Delay, Rtc,
-    IO,
+    dma_descriptors,
+    clock::ClockControl, peripherals::Peripherals, delay::Delay, rtc_cntl::Rtc,
+    system::SystemControl,
 };
 use hal::spi::master::prelude::*;
 use t_display_s3_amoled::rm67162::Orientation;
@@ -37,23 +37,27 @@ fn init_heap() {
     }
 }
 
+static mut DESCRIPTORS: [DmaDescriptor; 12] = [DmaDescriptor::EMPTY; 12];
+
 #[hal::entry]
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let system = peripherals.SYSTEM.split();
+    let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
-    let mut rtc = Rtc::new(peripherals.LPWR);
+    let mut rtc = Rtc::new(peripherals.LPWR, None);
     let timer_group0 = TimerGroup::new(
         peripherals.TIMG0,
         &clocks,
+        None,
     );
     let mut wdt0 = timer_group0.wdt;
     let timer_group1 = TimerGroup::new(
         peripherals.TIMG1,
         &clocks,
+        None,
     );
     let mut wdt1 = timer_group1.wdt;
     rtc.rwdt.disable();
@@ -64,12 +68,10 @@ fn main() -> ! {
     let mut delay = Delay::new(&clocks);
 
     // Set GPIO4 as an output, and set its state high initially.
-    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
-    let mut led = io.pins.gpio38.into_push_pull_output();
+    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+    let mut led = Output::new(io.pins.gpio38, Level::High);
     //let user_btn = io.pins.gpio21.into_pull_down_input();
     //let boot0_btn = io.pins.gpio0.into_pull_up_input(); // default pull up
-
-    led.set_high().unwrap();
 
     println!("GPIO init OK");
 
@@ -84,23 +86,25 @@ fn main() -> ! {
     let d2 = io.pins.gpio48;
     let d3 = io.pins.gpio5;
 
-    let mut cs = cs.into_push_pull_output();
-    cs.set_high().unwrap();
+    let mut cs = Output::new(cs, Level::High);
 
-    let mut rst = rst.into_push_pull_output();
+    let mut rst = Output::new(rst, Level::Low);
 
-    let dma = Gdma::new(peripherals.DMA);
+    let dma = Dma::new(peripherals.DMA);
     let dma_channel = dma.channel0;
 
-    // Descriptors should be sized as (BUFFERSIZE / 4092) * 3
-    let mut descriptors = [0u32; 12];
+    let (tx_descriptors, rx_descriptors) = dma_descriptors!(16384, 0);
     let spi = Spi::new_half_duplex(
         peripherals.SPI2, // use spi2 host
         75_u32.MHz(), // max 75MHz
         hal::spi::SpiMode::Mode0,
         &clocks)
         .with_pins(Some(sclk),Some(d0),Some(d1),Some(d2),Some(d3),NO_PIN)
-        .with_dma(dma_channel.configure(false, &mut descriptors, &mut [], DmaPriority::Priority0));
+        .with_dma(
+            dma_channel.configure(false, DmaPriority::Priority0),
+            tx_descriptors,
+            rx_descriptors,
+        );
 
     
     let mut display = t_display_s3_amoled::rm67162::dma::RM67162Dma::new(spi, cs);

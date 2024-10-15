@@ -11,7 +11,7 @@ use embedded_graphics::{
 use embedded_hal_1::{delay::DelayNs, digital::OutputPin};
 
 use hal::{
-    prelude::_esp_hal_dma_DmaTransfer,
+    Blocking,
     spi::{HalfDuplexMode, SpiDataMode, master::{dma::SpiDma, Command, Address}},
 };
 
@@ -21,13 +21,14 @@ pub const SCREEN_SIZE: Size = Size::new(240, 536);
 
 const BUFFER_PIXELS: usize = 16368 / 2;
 const BUFFER_SIZE: usize = BUFFER_PIXELS * 2;
+#[link_section = ".dram1"]
 static mut DMA_BUFFER: [u8; BUFFER_SIZE] = [0u8; BUFFER_SIZE];
 
 pub type SpiType<'d> =
-    SpiDma<'d, hal::peripherals::SPI2, hal::gdma::Channel0, HalfDuplexMode>;
+    SpiDma<'d, hal::peripherals::SPI2, hal::dma::Channel0, HalfDuplexMode, Blocking>;
 
 pub struct RM67162Dma<'a, CS> {
-    spi: Option<SpiType<'a>>,
+    spi: SpiType<'a>,
     cs: CS,
     orientation: Orientation,
 }
@@ -41,7 +42,7 @@ where
         cs: CS,
     ) -> RM67162Dma<'a, CS> {
         RM67162Dma {
-            spi: Some(spi),
+            spi,
             cs,
             orientation: Orientation::Portrait,
         }
@@ -63,21 +64,19 @@ where
     }
 
     fn send_cmd(&mut self, cmd: u32, data: &[u8]) -> Result<(), ()> {
-        let txbuf = StaticReadBuffer::new(data.as_ptr(), data.len());
         self.cs.set_low().unwrap();
+        let data: &'static [u8] = unsafe { core::mem::transmute(data) };
 
-        let mut spi = self.spi.take().unwrap();
-        let tx = spi
+        let tx = self.spi
             .write(
                 SpiDataMode::Single,
                 Command::Command8(0x02, SpiDataMode::Single),
                 Address::Address24(cmd << 8, SpiDataMode::Single),
                 0,
-                txbuf,
+                &data,
             )
             .unwrap();
-        (_, spi) = tx.wait().unwrap();
-        self.spi.replace(spi);
+        tx.wait().unwrap();
 
         self.cs.set_high().unwrap();
         Ok(())
@@ -85,18 +84,28 @@ where
 
     // rm67162_qspi_init
     pub fn init(&mut self, delay: &mut impl embedded_hal_1::delay::DelayNs) -> Result<(), ()> {
+        let mut buf = [0x55];
         for _ in 0..3 {
-            self.send_cmd(0x11, &[])?; // sleep out
+            self.send_cmd(0x11, &buf[..0])?; // sleep out
             delay.delay_ms(120);
 
-            self.send_cmd(0x3A, &[0x55])?; // 16bit mode
+            // self.send_cmd(0x3A, &[0x55])?; // 16bit mode
+            buf[0] = 0x55;
+            self.send_cmd(0x3A, &buf)?; // 16bit mode
 
-            self.send_cmd(0x51, &[0x00])?; // write brightness
+            //self.send_cmd(0x51, &[0x00])?; // write brightness
+            buf[0] = 0;
+            self.send_cmd(0x51, &buf)?; // write brightness
 
-            self.send_cmd(0x29, &[])?; // display on
+            self.send_cmd(0x29, &buf[..0])?; // display on
             delay.delay_ms(120);
 
-            self.send_cmd(0x51, &[0xD0])?; // write brightness
+            //self.send_cmd(0x51, &[0xD0])?; // write brightness
+            buf[0] = 0xd0;
+            self.send_cmd(0x51, &buf)?; // write brightness
+
+            buf[0] = 0x00;
+            self.send_cmd(0x35, &buf)?; // tearing effect line on
         }
 
         self.set_orientation(self.orientation)?;
@@ -122,7 +131,7 @@ where
                 (y2 & 0xFF) as u8,
             ],
         )?;
-        self.send_cmd(0x2c, &[])?;
+        self.send_cmd(0x2c, unsafe { &DMA_BUFFER[..0] })?;
         Ok(())
     }
 
@@ -130,46 +139,42 @@ where
         self.set_address(x, y, x, y)?;
 
         let raw = color.to_be_bytes();
-        let txbuf = StaticReadBuffer::new(raw.as_ptr(), 2);
+        let slice: &'static [u8] = unsafe { core::mem::transmute(&raw[..]) };
 
         self.cs.set_low().unwrap();
 
-        let mut spi = self.spi.take().unwrap();
-        let tx = spi
+        let tx = self.spi
             .write(
                 SpiDataMode::Quad,
                 Command::Command8(0x32, SpiDataMode::Single),
                 Address::Address24(0x2C << 8, SpiDataMode::Single),
                 0,
-                txbuf,
+                &slice,
             )
             .unwrap();
-        (_, spi) = tx.wait().unwrap();
-        self.spi.replace(spi);
+        tx.wait().unwrap();
 
         self.cs.set_high().unwrap();
         Ok(())
     }
 
     #[inline]
-    fn dma_send_colors(&mut self, txbuf: StaticReadBuffer, first_send: bool) -> Result<(), ()> {
-        let mut spi = self.spi.take().unwrap();
-
+    fn dma_send_colors(&mut self, txbuf: &[u8], first_send: bool) -> Result<(), ()> {
+        let txbuf: &'static [u8] = unsafe { core::mem::transmute(txbuf) };
         let tx = if first_send {
-            spi.write(
+            self.spi.write(
                 SpiDataMode::Quad,
                 Command::Command8(0x32, SpiDataMode::Single),
                 Address::Address24(0x2C << 8, SpiDataMode::Single),
                 0,
-                txbuf,
+                &txbuf,
             )
             .unwrap()
         } else {
-            spi.write(SpiDataMode::Quad, Command::None, Address::None, 0, txbuf)
+            self.spi.write(SpiDataMode::Quad, Command::None, Address::None, 0, &txbuf)
                 .unwrap()
         };
-        (_, spi) = tx.wait().unwrap();
-        self.spi.replace(spi);
+        tx.wait().unwrap();
         Ok(())
     }
 
@@ -185,8 +190,7 @@ where
         self.set_address(x, y, x + w - 1, y + h - 1)?;
 
         self.cs.set_low().unwrap();
-        let txbuf = StaticReadBuffer::new(raw_colors.as_ptr(), raw_colors.len());
-        self.dma_send_colors(txbuf, true)?;
+        self.dma_send_colors(raw_colors, true)?;
         self.cs.set_high().unwrap();
         Ok(())
     }
@@ -212,8 +216,7 @@ where
         self.cs.set_low().unwrap();
 
         for chunk in raw_framebuffer.chunks(BUFFER_SIZE) {
-            let txbuf = StaticReadBuffer::new(chunk.as_ptr(), chunk.len());
-            self.dma_send_colors(txbuf, first_send)?;
+            self.dma_send_colors(chunk, first_send)?;
             first_send = false;
         }
 
@@ -238,9 +241,7 @@ where
 
         for color in colors.into_iter().take(w as usize * h as usize) {
             if i == BUFFER_PIXELS {
-                let txbuf = StaticReadBuffer::new(unsafe { DMA_BUFFER.as_ptr() }, BUFFER_SIZE);
-
-                self.dma_send_colors(txbuf, first_send)?;
+                self.dma_send_colors(unsafe { &DMA_BUFFER }, first_send)?;
                 first_send = false;
                 i = 0;
             }
@@ -250,8 +251,7 @@ where
             i += 1;
         }
         if i > 0 {
-            let txbuf = StaticReadBuffer::new(unsafe { DMA_BUFFER.as_ptr() }, 2 * i);
-            self.dma_send_colors(txbuf, first_send)?;
+            self.dma_send_colors(unsafe { &DMA_BUFFER[..2*i] }, first_send)?;
         }
 
         self.cs.set_high().unwrap();
@@ -325,26 +325,5 @@ where
             colors.into_iter(),
         )?;
         Ok(())
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct StaticReadBuffer {
-    buffer: *const u8,
-    len: usize,
-}
-
-impl StaticReadBuffer {
-    pub fn new(buffer: *const u8, len: usize) -> StaticReadBuffer {
-        StaticReadBuffer { buffer, len }
-    }
-}
-
-unsafe impl hal::prelude::_embedded_dma_ReadBuffer for StaticReadBuffer {
-    type Word = u8;
-
-    #[inline]
-    unsafe fn read_buffer(&self) -> (*const Self::Word, usize) {
-        (self.buffer, self.len)
     }
 }
